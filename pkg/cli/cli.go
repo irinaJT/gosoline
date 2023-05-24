@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"github.com/justtrackio/gosoline/pkg/stream"
 	"time"
 
 	"github.com/justtrackio/gosoline/pkg/appctx"
@@ -52,6 +53,7 @@ func Run(module kernel.ModuleFactory, otherModuleMaps ...map[string]kernel.Modul
 	options := []kernel.Option{
 		kernel.WithKillTimeout(settings.KillTimeout),
 		kernel.WithModuleFactory("cli", module, kernel.ModuleType(kernel.TypeEssential), kernel.ModuleStage(kernel.StageApplication)),
+		kernel.WithModuleMultiFactory(stream.ProducerDaemonFactory),
 	}
 
 	for _, otherModuleMap := range otherModuleMaps {

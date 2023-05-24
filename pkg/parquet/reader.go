@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -24,8 +25,8 @@ import (
 )
 
 type Progress struct {
-	Current   int
 	FileCount int
+	Current   int
 }
 
 type (
@@ -42,18 +43,18 @@ type Reader interface {
 }
 
 type s3Reader struct {
-	logger log.Logger
+	logger   log.Logger
+	s3Client gosoS3.Client
 
 	modelId              mdl.ModelId
 	prefixNamingStrategy S3PrefixNamingStrategy
 	recorder             FileRecorder
-	s3Client             gosoS3.Client
 }
 
-func NewReader(ctx context.Context, config cfg.Config, logger log.Logger, settings *ReaderSettings) (Reader, error) {
-	s3Client, err := gosoS3.ProvideClient(ctx, config, logger, settings.ClientName)
+func NewReader(ctx context.Context, config cfg.Config, logger log.Logger, settings *ReaderSettings) (*s3Reader, error) {
+	s3Client, err := gosoS3.ProvideClient(ctx, config, logger, "default")
 	if err != nil {
-		return nil, fmt.Errorf("can not create s3 client with name %s: %w", settings.ClientName, err)
+		return nil, fmt.Errorf("can not create s3 client default: %w", err)
 	}
 
 	prefixNaming, exists := s3PrefixNamingStrategies[settings.NamingStrategy]
@@ -76,7 +77,7 @@ func NewReaderWithInterfaces(
 	modelId mdl.ModelId,
 	prefixNaming S3PrefixNamingStrategy,
 	recorder FileRecorder,
-) Reader {
+) *s3Reader {
 	return &s3Reader{
 		logger:               logger,
 		s3Client:             s3Client,
@@ -129,7 +130,7 @@ func (r *s3Reader) ReadDateAsync(ctx context.Context, datetime time.Time, target
 
 	stop := false
 
-	sem := semaphore.NewWeighted(int64(10))
+	sem := semaphore.NewWeighted(int64(6))
 	cfn := coffin.New()
 
 	for i, file := range files {
@@ -166,7 +167,6 @@ func (r *s3Reader) ReadDateAsync(ctx context.Context, datetime time.Time, target
 
 				if !ok {
 					stop = true
-
 					return nil
 				}
 
@@ -259,14 +259,14 @@ func (r *s3Reader) ReadFileColumns(ctx context.Context, columnNames []string, fi
 	columnsToRead := funk.SliceToSet(columnNames)
 
 	for column := range columnsToRead {
-		path := common.ReformPathStr(fmt.Sprintf("%s.%s", parquetRoot, column))
+		path := common.ReformPathStr(fmt.Sprintf("%s.%s", strings.ToLower(pr.SchemaHandler.PathMap.Path), column))
 
 		values, _, _, err := pr.ReadColumnByPath(path, size)
 		if err != nil {
-			return nil, err
+			columns[column] = make([]any, size)
+		} else {
+			columns[column] = append(make([]any, 0, size), values...)
 		}
-
-		columns[column] = values
 	}
 
 	pr.ReadStop()

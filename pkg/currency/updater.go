@@ -320,6 +320,7 @@ func (s *updaterService) updateFromDate(ctx context.Context) *time.Time {
 	exists, err := s.store.Get(ctx, HistoricalExchangeRateDateKey, &dateUnix)
 	if err != nil {
 		logger.Info("updateFromDate error fetching date, using start date")
+
 		return &s.settings.StartDate
 	}
 

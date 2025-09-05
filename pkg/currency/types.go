@@ -13,7 +13,7 @@ type Content struct {
 }
 
 func (c Content) GetTime() (time.Time, error) {
-	t, err := time.Parse("2006-01-02", c.Time)
+	t, err := time.Parse(time.DateOnly, c.Time)
 	if err != nil {
 		return time.Time{}, err
 	}

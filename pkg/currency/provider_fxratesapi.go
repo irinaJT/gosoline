@@ -10,7 +10,10 @@ import (
 	"github.com/justtrackio/gosoline/pkg/log"
 )
 
-const FxRatesApiProviderName = "fxratesapi"
+const (
+	FxRatesApiProviderName = "fxratesapi"
+	ExchangeRateFxRatesUrl = "https://api.fxratesapi.com/"
+)
 
 type FxRatesApiResponse struct {
 	Success   bool               `json:"success"`
@@ -20,22 +23,24 @@ type FxRatesApiResponse struct {
 	Rates     map[string]float64 `json:"rates"`
 }
 
-func FxRatesApiProviderOption() ProviderOptions {
-	return func(ctx context.Context, logger log.Logger, http http.Client, settings ProviderSettings) (Provider, error) {
-		if settings.ApiKey == "" {
-			return nil, fmt.Errorf("no fxratesapi provider api key set")
-		}
-
-		logger.Info("using fxratesapi as currency provider")
-
-		return &fxRatesApiProvider{logger, http, &settings}, nil
+func newFxRatesApiProvider(_ context.Context, logger log.Logger, http http.Client, settings ProviderSettings) Provider {
+	if settings.ApiKey == "" {
+		return nil
 	}
+
+	logger.Info("using fxratesapi as currency provider")
+
+	return NewFxRatesApiProvider(logger, http, settings)
+}
+
+func NewFxRatesApiProvider(logger log.Logger, http http.Client, settings ProviderSettings) Provider {
+	return &fxRatesApiProvider{logger, http, settings}
 }
 
 type fxRatesApiProvider struct {
 	logger   log.Logger
 	http     http.Client
-	settings *ProviderSettings
+	settings ProviderSettings
 }
 
 func (f *fxRatesApiProvider) Name() string {
@@ -72,28 +77,22 @@ func (f *fxRatesApiProvider) FetchLatestRates(ctx context.Context) ([]Rate, erro
 func (f *fxRatesApiProvider) FetchHistoricalRates(ctx context.Context, dates []time.Time) (map[time.Time][]Rate, error) {
 	result := make(map[time.Time][]Rate)
 	for _, d := range dates {
-		url := ExchangeRateFxRatesUrl + "historical?access_key=" + f.settings.ApiKey + "&base=EUR&date=" + d.Format("2006-01-02")
+		url := ExchangeRateFxRatesUrl + "historical?access_key=" + f.settings.ApiKey + "&base=EUR&date=" + d.Format(time.DateOnly)
 
 		request := f.http.NewRequest().WithUrl(url)
 
 		response, err := f.http.Get(ctx, request)
 		if err != nil {
-			f.logger.Warn("error requesting fxratesapi historical rates for %s: %v", d.Format("2006-01-02"), err)
-
-			continue
+			return nil, fmt.Errorf("error requesting fxratesapi historical rates for %s: %v", d.Format(time.DateOnly), err)
 		}
 
 		var fxResp FxRatesApiResponse
 		if err := json.Unmarshal(response.Body, &fxResp); err != nil {
-			f.logger.Warn("error unmarshalling fxratesapi historical rates for %s: %v", d.Format("2006-01-02"), err)
-
-			continue
+			return nil, fmt.Errorf("error unmarshalling fxratesapi historical rates for %s: %v", d.Format(time.DateOnly), err)
 		}
 
 		if !fxResp.Success {
-			f.logger.Warn("fxratesapi response not successful for %s", d.Format("2006-01-02"))
-
-			continue
+			return nil, fmt.Errorf("fxratesapi response not successful for %s", d.Format(time.DateOnly))
 		}
 
 		dayRates := make([]Rate, 0, len(fxResp.Rates))

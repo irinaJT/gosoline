@@ -17,20 +17,14 @@ import (
 
 const (
 	ExchangeRateRefresh           = 8 * time.Hour
-	ExchangeRateECBUrl            = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
-	HistoricalExchangeRateECBUrl  = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.xml"
 	ExchangeRateDateKey           = "currency_exchange_last_refresh"
 	HistoricalExchangeRateDateKey = "currency_exchange_historical_last_refresh"
-	ExchangeRateFxRatesUrl        = "https://api.fxratesapi.com/"
 )
 
-const (
-	YMDLayout = "2006-01-02"
-	// RatesAmount
-	// We expect to have around 180 currencies in total (ECB + fxratesapi.com).
-	// It's okay to exceed the limit, but it's nice to avoid unnecessary reallocations.
-	RatesAmount = 180
-)
+// RatesAmount
+// We expect to have around 180 currencies in total (ECB + fxratesapi.com).
+// It's okay to exceed the limit, but it's nice to avoid unnecessary reallocations.
+const RatesAmount = 180
 
 type Settings struct {
 	StartDate time.Time `cfg:"start_date" default:"2015-01-01"`
@@ -71,12 +65,7 @@ func NewUpdater(ctx context.Context, config cfg.Config, logger log.Logger) (Upda
 		return nil, fmt.Errorf("failed to unmarshal currency updater settings: %w", err)
 	}
 
-	providersConfig := make(ProvidersConfig)
-	if err := config.UnmarshalKey("currency_service.providers", &providersConfig); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal providers config: %w", err)
-	}
-
-	providers, err := initProviders(ctx, logger, httpClient, providersConfig)
+	providers, err := initProviders(ctx, config, logger, httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize providers: %w", err)
 	}
@@ -168,7 +157,7 @@ func (s *updaterService) needsRefresh(ctx context.Context) bool {
 
 func (s *updaterService) getCurrencyRates(ctx context.Context) ([]Rate, error) {
 	allRates := make([]Rate, 0, RatesAmount)
-	rateMap := make(map[string]float64)
+	rateMap := make(funk.Set[string])
 
 	for _, provider := range s.providers {
 		rates, err := provider.FetchLatestRates(ctx)
@@ -179,7 +168,7 @@ func (s *updaterService) getCurrencyRates(ctx context.Context) ([]Rate, error) {
 		for _, rate := range rates {
 			if _, exists := rateMap[rate.Currency]; !exists {
 				allRates = append(allRates, rate)
-				rateMap[rate.Currency] = rate.Rate
+				rateMap.Add(rate.Currency)
 			}
 		}
 	}
@@ -206,7 +195,8 @@ func (s *updaterService) EnsureHistoricalExchangeRates(ctx context.Context) erro
 	for i, provider := range s.providers {
 		result, err := provider.FetchHistoricalRates(ctx, allDates)
 		if err != nil {
-			logger.Warn("error fetching historical rates from provider %s: %v", provider.Name(), err)
+			logger.Error("error fetching historical rates from provider %s: %v", provider.Name(), err)
+
 			continue
 		}
 
@@ -259,41 +249,32 @@ func (s *updaterService) EnsureHistoricalExchangeRates(ctx context.Context) erro
 	return nil
 }
 
-func initProviders(ctx context.Context, logger log.Logger, httpClient http.Client, providersConfig ProvidersConfig) ([]Provider, error) {
+func initProviders(ctx context.Context, config cfg.Config, logger log.Logger, httpClient http.Client) ([]Provider, error) {
 	var providers []Provider
+	providersConfig := make(ProvidersConfig)
 
-	// Always add ECB provider by default
-	if option, ok := ProviderRegistry[ECBProviderName]; ok {
-		provider, err := option(ctx, logger, httpClient, ProviderSettings{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create default ECB provider: %w", err)
+	for name := range providerRegistry {
+		providerSettings := ProviderSettings{}
+		if err := config.UnmarshalKey("currency_service.providers."+name, &providerSettings); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal provider settings for %s: %w", name, err)
 		}
 
-		if provider != nil {
-			logger.Info("registering default currency provider: %s", provider.Name())
-			providers = append(providers, provider)
-		}
+		providersConfig[name] = providerSettings
 	}
 
 	for name, providerSettings := range providersConfig {
-		if name == ECBProviderName {
-			continue
-		}
-
-		option, ok := ProviderRegistry[name]
+		option, ok := providerRegistry[name]
 		if !ok {
 			logger.Warn("provider %s not found in registry, skipping", name)
 			continue
 		}
 
-		provider, err := option(ctx, logger, httpClient, providerSettings)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create provider %s: %w", name, err)
-		}
-
+		provider := option(ctx, logger, httpClient, providerSettings)
 		if provider != nil {
 			logger.Info("registering currency provider: %s", provider.Name())
 			providers = append(providers, provider)
+		} else {
+			logger.Info("currency provider %s is disabled ", name)
 		}
 	}
 
@@ -319,11 +300,8 @@ func fillHistoricalGaps(dayCurrencyRates map[time.Time]map[string]float64) {
 
 	sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
 
-	for i, currentDate := range dates {
-		if currentDate == funk.Last(dates) {
-			break
-		}
-
+	for i := 0; i < len(dates)-1; i++ {
+		currentDate := dates[i]
 		nextDay := dates[i+1]
 
 		for currency, rate := range dayCurrencyRates[currentDate] {
@@ -387,6 +365,6 @@ func (s *updaterService) historicalRatesNeedRefresh(ctx context.Context) bool {
 	return false
 }
 
-func historicalRateKey(time time.Time, currency string) string {
-	return time.Format(YMDLayout) + "-" + currency
+func historicalRateKey(date time.Time, currency string) string {
+	return date.Format(time.DateOnly) + "-" + currency
 }

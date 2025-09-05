@@ -11,7 +11,7 @@ import (
 type ProviderSettings struct {
 	ApiKey string `cfg:"api_key"`
 	// Providers with lower values will be used first. The order of the providers with the same priority is non-deterministic.
-	Priority uint `cfg:"priority" validation:"required"`
+	Priority uint `cfg:"priority"`
 }
 
 //go:generate go run github.com/vektra/mockery/v2 --name Provider
@@ -22,16 +22,20 @@ type Provider interface {
 	FetchHistoricalRates(ctx context.Context, dates []time.Time) (map[time.Time][]Rate, error)
 }
 
-var ProviderRegistry = map[string]ProviderOptions{
-	ECBProviderName:        ECBProviderOption(),
-	FxRatesApiProviderName: FxRatesApiProviderOption(),
+var providerRegistry = map[string]ProviderFactory{
+	ECBProviderName:        newECBProvider,
+	FxRatesApiProviderName: newFxRatesApiProvider,
 }
 
-type ProviderOptions func(ctx context.Context, logger log.Logger, http http.Client, settings ProviderSettings) (Provider, error)
+type ProviderFactory func(ctx context.Context, logger log.Logger, http http.Client, settings ProviderSettings) Provider
 
-// RegisterProvider registers a new currency provider with the given name and options.
+// RegisterProvider registers a new currency provider with the given name and factory.
 // If a provider with the same name already exists, it will be overwritten.
 // Providers should be registered before currency module is initialized (e.g. in init function).
-func RegisterProvider(name string, option ProviderOptions) {
-	ProviderRegistry[name] = option
+func RegisterProvider(name string, option ProviderFactory) {
+	if _, exists := providerRegistry[name]; exists {
+		panic("a currency provider with the name " + name + " already exists")
+	}
+
+	providerRegistry[name] = option
 }

@@ -10,7 +10,11 @@ import (
 	"github.com/justtrackio/gosoline/pkg/log"
 )
 
-const ECBProviderName = "ecb"
+const (
+	ECBProviderName              = "ecb"
+	ExchangeRateECBUrl           = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
+	HistoricalExchangeRateECBUrl = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.xml"
+)
 
 type Body struct {
 	Content Content `xml:"Cube"`
@@ -36,12 +40,14 @@ type ECBProviderHistoricalExchangeResponse struct {
 	Body    HistoricalBody `xml:"Cube"`
 }
 
-func ECBProviderOption() ProviderOptions {
-	return func(ctx context.Context, logger log.Logger, http http.Client, settings ProviderSettings) (Provider, error) {
-		logger.Info("using ecb as currency provider")
+func newECBProvider(_ context.Context, logger log.Logger, http http.Client, _ ProviderSettings) Provider {
+	logger.Info("using ecb as currency provider")
 
-		return &ecbProvider{logger, http}, nil
-	}
+	return NewECBProvider(logger, http)
+}
+
+func NewECBProvider(logger log.Logger, http http.Client) Provider {
+	return &ecbProvider{logger, http}
 }
 
 type ecbProvider struct {
@@ -93,12 +99,12 @@ func (f *ecbProvider) FetchHistoricalRates(ctx context.Context, dates []time.Tim
 			return nil, fmt.Errorf("error parsing time in historical exchange rates: %w", err)
 		}
 
-		ecbRatesByDate[date.Format(YMDLayout)] = dayRates.Rates
+		ecbRatesByDate[date.Format(time.DateOnly)] = dayRates.Rates
 	}
 
 	result := make(map[time.Time][]Rate)
 	for _, date := range dates {
-		if rates, ok := ecbRatesByDate[date.Format(YMDLayout)]; ok {
+		if rates, ok := ecbRatesByDate[date.Format(time.DateOnly)]; ok {
 			result[date] = rates
 		}
 	}

@@ -43,10 +43,10 @@ type ECBProviderHistoricalExchangeResponse struct {
 func newECBProvider(_ context.Context, logger log.Logger, http http.Client, _ ProviderSettings) Provider {
 	logger.Info("using ecb as currency provider")
 
-	return NewECBProvider(logger, http)
+	return NewECBProviderWithInterfaces(logger, http)
 }
 
-func NewECBProvider(logger log.Logger, http http.Client) Provider {
+func NewECBProviderWithInterfaces(logger log.Logger, http http.Client) Provider {
 	return &ecbProvider{logger, http}
 }
 

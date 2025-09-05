@@ -30,10 +30,10 @@ func newFxRatesApiProvider(_ context.Context, logger log.Logger, http http.Clien
 
 	logger.Info("using fxratesapi as currency provider")
 
-	return NewFxRatesApiProvider(logger, http, settings)
+	return NewFxRatesApiProviderWithInterfaces(logger, http, settings)
 }
 
-func NewFxRatesApiProvider(logger log.Logger, http http.Client, settings ProviderSettings) Provider {
+func NewFxRatesApiProviderWithInterfaces(logger log.Logger, http http.Client, settings ProviderSettings) Provider {
 	return &fxRatesApiProvider{logger, http, settings}
 }
 

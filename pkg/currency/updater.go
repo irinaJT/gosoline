@@ -178,23 +178,21 @@ func (s *updaterService) getCurrencyRates(ctx context.Context) ([]Rate, error) {
 func (s *updaterService) EnsureHistoricalExchangeRates(ctx context.Context) error {
 	logger := s.logger.WithContext(ctx)
 
-	if !s.historicalRatesNeedRefresh(ctx) {
+	updateFromDate := s.updateFromDate(ctx)
+	if updateFromDate == nil {
 		return nil
 	}
 
 	logger.Info("requesting historical exchange rates")
 
-	// Determine interval within which we should get rates for each day
-	startDate := s.settings.StartDate
-	endDate := s.clock.Now()
-	allDates := generateDateRange(startDate, endDate)
+	datesToUpdate := generateDateRange(*updateFromDate, s.clock.Now())
 
 	// Fetch historical rates from all providers
 	providerResults := make([]map[time.Time][]Rate, len(s.providers))
 	for i, provider := range s.providers {
-		result, err := provider.FetchHistoricalRates(ctx, allDates)
+		result, err := provider.FetchHistoricalRates(ctx, datesToUpdate)
 		if err != nil {
-			logger.Error("error fetching historical rates from provider %s: %v", provider.Name(), err)
+			logger.Error("error fetching historical rates from provider %s: %w", provider.Name(), err)
 
 			continue
 		}
@@ -205,7 +203,7 @@ func (s *updaterService) EnsureHistoricalExchangeRates(ctx context.Context) erro
 	// Gather all results, provider by provider, day by day
 	// Higher priority providers are preferred over lower priority ones
 	dayCurrencyRates := make(map[time.Time]map[string]float64)
-	for _, date := range allDates {
+	for _, date := range datesToUpdate {
 		dayCurrencyRates[date] = make(map[string]float64)
 
 		for _, providerResult := range providerResults {
@@ -223,7 +221,7 @@ func (s *updaterService) EnsureHistoricalExchangeRates(ctx context.Context) erro
 
 	// Preparing data for storing in kvstore
 	keyValues := make(map[string]float64)
-	for _, d := range allDates {
+	for _, d := range datesToUpdate {
 		for currency, rate := range dayCurrencyRates[d] {
 			key := historicalRateKey(d, currency)
 			keyValues[key] = rate
@@ -314,22 +312,21 @@ func fillHistoricalGaps(dayCurrencyRates map[time.Time]map[string]float64) {
 	}
 }
 
-func (s *updaterService) historicalRatesNeedRefresh(ctx context.Context) bool {
+func (s *updaterService) updateFromDate(ctx context.Context) *time.Time {
 	logger := s.logger.WithContext(ctx)
 
 	var dateUnix float64
 
 	exists, err := s.store.Get(ctx, HistoricalExchangeRateDateKey, &dateUnix)
 	if err != nil {
-		logger.Info("historicalRatesNeedRefresh error fetching date")
-
-		return true
+		logger.Info("updateFromDate error fetching date, using start date")
+		return &s.settings.StartDate
 	}
 
 	if !exists {
-		logger.Info("historicalRatesNeedRefresh date doesn't exist")
+		logger.Info("updateFromDate date doesn't exist")
 
-		return true
+		return &s.settings.StartDate
 	}
 
 	comparisonDate := s.clock.Now().Add(-24 * time.Hour)
@@ -337,12 +334,12 @@ func (s *updaterService) historicalRatesNeedRefresh(ctx context.Context) bool {
 	date := time.Unix(int64(dateUnix), 0)
 
 	if date.Before(comparisonDate) {
-		logger.Info("historicalRatesNeedRefresh comparison date was more than threshold")
+		logger.Info("updateFromDate comparison date was more than threshold")
 
-		return true
+		return &date
 	}
 
-	return false
+	return nil
 }
 
 func historicalRateKey(date time.Time, currency string) string {

@@ -165,8 +165,8 @@ func (s *updaterServiceTestSuite) SetupTest() {
 	s.client = httpMock.NewClient(s.T())
 	s.clock = clock.NewFakeClockAt(time.Date(2021, 5, 27, 0, 0, 0, 0, time.UTC))
 
-	ecbProvider := currency.NewECBProvider(s.logger, s.client)
-	fxRatesApiProvider := currency.NewFxRatesApiProvider(s.logger, s.client, currency.ProviderSettings{ApiKey: "test", Priority: 1})
+	ecbProvider := currency.NewECBProviderWithInterfaces(s.logger, s.client)
+	fxRatesApiProvider := currency.NewFxRatesApiProviderWithInterfaces(s.logger, s.client, currency.ProviderSettings{ApiKey: "test", Priority: 1})
 
 	s.updater = currency.NewUpdaterWithInterfaces(s.logger, s.store, s.client, s.clock, &currency.Settings{
 		StartDate: time.Date(2021, 5, 23, 0, 0, 0, 0, time.UTC),

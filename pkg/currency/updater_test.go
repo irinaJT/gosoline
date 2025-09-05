@@ -169,11 +169,11 @@ func (s *updaterServiceTestSuite) SetupTest() {
 	fxRatesApiProvider := currency.NewFxRatesApiProvider(s.logger, s.client, currency.ProviderSettings{ApiKey: "test", Priority: 1})
 
 	s.updater = currency.NewUpdaterWithInterfaces(s.logger, s.store, s.client, s.clock, &currency.Settings{
-		StartDate: time.Date(2021, 05, 23, 0, 0, 0, 0, time.UTC),
+		StartDate: time.Date(2021, 5, 23, 0, 0, 0, 0, time.UTC),
 	}, []currency.Provider{ecbProvider})
 
 	s.updaterWithFxRatesApi = currency.NewUpdaterWithInterfaces(s.logger, s.store, s.client, s.clock, &currency.Settings{
-		StartDate: time.Date(2021, 05, 23, 0, 0, 0, 0, time.UTC),
+		StartDate: time.Date(2021, 5, 23, 0, 0, 0, 0, time.UTC),
 	}, []currency.Provider{ecbProvider, fxRatesApiProvider})
 }
 

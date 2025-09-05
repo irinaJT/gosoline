@@ -2,7 +2,6 @@ package currency
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -266,6 +265,7 @@ func initProviders(ctx context.Context, config cfg.Config, logger log.Logger, ht
 		option, ok := providerRegistry[name]
 		if !ok {
 			logger.Warn("provider %s not found in registry, skipping", name)
+
 			continue
 		}
 
@@ -289,9 +289,11 @@ func initProviders(ctx context.Context, config cfg.Config, logger log.Logger, ht
 
 func generateDateRange(start, end time.Time) []time.Time {
 	var dates []time.Time
+
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		dates = append(dates, d)
 	}
+
 	return dates
 }
 
@@ -310,28 +312,6 @@ func fillHistoricalGaps(dayCurrencyRates map[time.Time]map[string]float64) {
 			}
 		}
 	}
-}
-
-func (s *updaterService) getFxRatesApiRates(ctx context.Context, url string) (map[string]float64, error) {
-	request := s.http.NewRequest().WithUrl(url)
-
-	response, err := s.http.Get(ctx, request)
-	if err != nil {
-		return nil, fmt.Errorf("error requesting fxratesapi.com rates: %w", err)
-	}
-
-	var fxResp FxRatesApiResponse
-
-	err = json.Unmarshal(response.Body, &fxResp)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling fxratesapi.com rates: %w", err)
-	}
-
-	if !fxResp.Success {
-		return nil, fmt.Errorf("fxratesapi.com response not successful")
-	}
-
-	return fxResp.Rates, nil
 }
 
 func (s *updaterService) historicalRatesNeedRefresh(ctx context.Context) bool {
